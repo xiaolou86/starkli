@@ -4,7 +4,9 @@ use anyhow::Result;
 use clap::Parser;
 use colored::Colorize;
 use colored_json::{ColorMode, Output};
-use starknet::{contract::ContractFactory, core::types::FieldElement, signers::SigningKey};
+use starknet::{
+    contract::ContractFactory, core::types::FieldElement, macros::felt, signers::SigningKey,
+};
 
 use crate::{
     account::AccountArgs,
@@ -66,7 +68,7 @@ impl Deploy {
             anyhow::bail!("--simulate cannot be used with --estimate-only");
         }
 
-        let provider = Arc::new(self.provider.into_provider());
+        let provider = Arc::new(self.provider.into_provider()?);
         let felt_decoder = FeltDecoder::new(AddressBookResolver::new(provider.clone()));
 
         let class_hash = FieldElement::from_hex_be(&self.class_hash)?;
@@ -97,19 +99,13 @@ impl Deploy {
                 if fee_setting.is_estimate_only() {
                     eprintln!(
                         "{} ETH",
-                        format!(
-                            "{}",
-                            <u64 as Into<FieldElement>>::into(estimated_fee).to_big_decimal(18)
-                        )
-                        .bright_yellow(),
+                        format!("{}", estimated_fee.to_big_decimal(18)).bright_yellow(),
                     );
                     return Ok(());
                 }
 
                 // TODO: make buffer configurable
-                let estimated_fee_with_buffer = estimated_fee * 3 / 2;
-
-                estimated_fee_with_buffer.into()
+                (estimated_fee * felt!("3")).floor_div(felt!("2"))
             }
         };
 

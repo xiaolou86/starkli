@@ -3,17 +3,17 @@ use std::{fmt::Display, str::FromStr};
 use anyhow::Result;
 use async_trait::async_trait;
 use auto_impl::auto_impl;
-use clap::{builder::PossibleValue, ValueEnum};
-use starknet::providers::Provider;
+use starknet::{macros::short_string, providers::Provider};
 
 use crate::provider::ExtendedProvider;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Network {
     Mainnet,
-    Goerli1,
-    Goerli2,
-    Integration,
+    Goerli,
+    Sepolia,
+    GoerliIntegration,
+    SepoliaIntegration,
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
@@ -23,36 +23,6 @@ pub trait NetworkSource {
     async fn get_network(&self) -> Result<Option<Network>>;
 }
 
-impl ValueEnum for Network {
-    fn value_variants<'a>() -> &'a [Self] {
-        &[
-            Self::Mainnet,
-            Self::Goerli1,
-            Self::Goerli2,
-            Self::Integration,
-        ]
-    }
-
-    fn to_possible_value(&self) -> Option<PossibleValue> {
-        match self {
-            Network::Mainnet => Some(PossibleValue::new("mainnet").aliases(["alpha-mainnet"])),
-            Network::Goerli1 => Some(PossibleValue::new("goerli-1").aliases([
-                "goerli",
-                "goerli1",
-                "alpha-goerli",
-                "alpha-goerli1",
-                "alpha-goerli-1",
-            ])),
-            Network::Goerli2 => Some(PossibleValue::new("goerli-2").aliases([
-                "goerli2",
-                "alpha-goerli2",
-                "alpha-goerli-2",
-            ])),
-            Network::Integration => Some(PossibleValue::new("integration")),
-        }
-    }
-}
-
 impl FromStr for Network {
     type Err = anyhow::Error;
 
@@ -60,9 +30,10 @@ impl FromStr for Network {
         match s {
             "mainnet" | "alpha-mainnet" => Ok(Self::Mainnet),
             "goerli" | "goerli1" | "goerli-1" | "alpha-goerli" | "alpha-goerli1"
-            | "alpha-goerli-1" => Ok(Self::Goerli1),
-            "goerli2" | "goerli-2" | "alpha-goerli2" | "alpha-goerli-2" => Ok(Self::Goerli2),
-            "integration" => Ok(Self::Integration),
+            | "alpha-goerli-1" => Ok(Self::Goerli),
+            "sepolia" | "alpha-sepolia" | "sepolia-testnet" => Ok(Self::Sepolia),
+            "goerli-integration" | "integration" => Ok(Self::GoerliIntegration),
+            "sepolia-integration" => Ok(Self::SepoliaIntegration),
             _ => Err(anyhow::anyhow!("unknown network: {}", s)),
         }
     }
@@ -72,9 +43,10 @@ impl Display for Network {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Mainnet => write!(f, "mainnet"),
-            Self::Goerli1 => write!(f, "goerli-1"),
-            Self::Goerli2 => write!(f, "goerli-2"),
-            Self::Integration => write!(f, "integration"),
+            Self::Goerli => write!(f, "goerli"),
+            Self::Sepolia => write!(f, "sepolia"),
+            Self::GoerliIntegration => write!(f, "goerli-integration"),
+            Self::SepoliaIntegration => write!(f, "sepolia-integration"),
         }
     }
 }
@@ -86,18 +58,18 @@ impl NetworkSource for ExtendedProvider {
         let chain_id = self.chain_id().await?;
         let is_integration = self.is_integration();
 
-        Ok(if is_integration {
-            if chain_id == starknet::core::chain_id::TESTNET {
-                Some(Network::Integration)
-            } else {
-                None
-            }
-        } else if chain_id == starknet::core::chain_id::MAINNET {
+        Ok(if chain_id == starknet::core::chain_id::MAINNET {
             Some(Network::Mainnet)
         } else if chain_id == starknet::core::chain_id::TESTNET {
-            Some(Network::Goerli1)
-        } else if chain_id == starknet::core::chain_id::TESTNET2 {
-            Some(Network::Goerli2)
+            if is_integration {
+                Some(Network::GoerliIntegration)
+            } else {
+                Some(Network::Goerli)
+            }
+        } else if chain_id == short_string!("SN_SEPOLIA") {
+            Some(Network::Sepolia)
+        } else if chain_id == short_string!("SN_INTEGRATION_SEPOLIA") {
+            Some(Network::SepoliaIntegration)
         } else {
             None
         })
